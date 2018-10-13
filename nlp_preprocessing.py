@@ -189,4 +189,107 @@ def lda_preprocess(df: object, text_col: object, lang_list: list, min_count=5, t
 
     # Lemmatize:
     print("Begin lemmatization")
-    data_lemmatized = 
+    if trigrams:
+        data_lemmatized = lemmatization(data_words_bigrams, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ABV'])
+    else:
+        data_lemmatized = lemmatization(data_words_trigrams, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ABV'])
+    print('End lemmatization')
+
+    print('Begin creating dictionary')
+    id2word = create_dictionary(data_lemmatized)
+    print('End creating dictionary')
+
+    print('Being creating corpus')
+    corpus = create_corpus(id2word, data_lemmatized)
+    print('End creating corpus')
+
+    print('End LDA preprocessing')
+
+    return id2word, corpus, data_lemmatized
+
+
+def compute_coherence_values(dictionary, corpus, texts, limit, start=2, step=3, mallet_path=None):
+    """
+    Compute the Cv coherence for various number of topics
+    :param dictionary: Dictionary
+    :param corpus: Corpus
+    :param texts: List of input texts
+    :param limit: The maximum number of topics
+    :param start: The minimum number of topics
+    :param step: The step size for the number of topics to consider
+    :param mallet_path: Path to mallet if you want to use it for the LDA model
+    :return: list of LDA topic models and the list of corresponding coherence values
+    """
+    coherence_values = []
+    model_list = []
+    for num_topics in range(start, limit, step):
+        if mallet_path:
+            model = gensim.models.wrappers.LdaMallet(mallet_path=mallet_path,
+                                                     corpus=corpus,
+                                                     num_topics=num_topics,
+                                                     id2word=id2word)
+        else:
+            # TODO: Add support for all parameters.
+            model = gensim.models.ldamodel.LdaModel(corpus=corpus,
+                                                    id2word=dictionary,
+                                                    num_topics=num_topics,
+                                                    random_state=0,
+                                                    update_every=1,
+                                                    chunksize=100,
+                                                    passes=10,
+                                                    alpha='auto',
+                                                    per_word_topics=True)
+        model_list.append(model)
+        coherence_model = CoherenceModel(model=model,
+                                         texts=texts,
+                                         dictionary=dictionary,
+                                         coherence='c_v')
+        coherence_values.append(coherence_model.get_coherence())
+
+    return model_list, coherence_values
+
+
+def evaluate_model_coherence(model_list, coherence_values, limit, start=2, step=3):
+    """
+    Evaluates the coherence of models and selects the best model from input list
+    :param model_list: List of trained LDA models for different numbers of topics
+    :param coherence_values: The corresponding Cv coherence values for each model
+    :param limit: The maximum number of topics considered
+    :param start: The minimum number of topics considered
+    :param step: The step size between topics used during model construction
+    :return: The best model, the optimal number of topics, the corresponding coherence score and its index in the input model list.
+    """
+    # Plot the coherence scores:
+    x = range(start, limit, step)
+    plt.plot(x, coherence_values)
+    plt.xlabel("Number of topics")
+    plt.ylabel('Cv coherence scores')
+    plt.legend(['Coherence values'], loc='best')
+    plt.show()
+
+    # Print the coherence scores
+    for m, cv in zip(x, coherence_values):
+        print("Number of topics: {0}  Cv coherence score: {1}".format(m, round(cv, 4)))
+
+    # Select best model
+    print("Selecting best model.  Note: this is based on maximizing coherence score.")
+    print("If the score does not maximize, consider changing topic number range, or select the model that gave the highest coherence score before flattening out.")
+    print("Examine the plot of number of topics vs coherence score to judge for yourself.")
+
+    # Index of best coherence score
+    best_index = coherence_values.index(max(coherence_values))
+    best_model = model_list[best_index]
+
+    print("The best model has {0} topics".format(x[best_index]))
+    print("The topics are:")
+    # model_topics = best_model.show_topics(formatted=False)
+    pprint(best_model.print_topics(num_words=10))
+
+    return best_model, x[best_index], max(coherence_values), best_index
+
+
+def format_topics_sentences(ldamodel, corpus, texts):
+    pass
+
+
+
