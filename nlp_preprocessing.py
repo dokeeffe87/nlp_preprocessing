@@ -289,7 +289,62 @@ def evaluate_model_coherence(model_list, coherence_values, limit, start=2, step=
 
 
 def format_topics_sentences(ldamodel, corpus, texts):
-    pass
+    """
+    Determine the dominant topic in a document (sentence)
+    :param ldamodel: The trained LDA model
+    :param corpus: The corpus used for the LDA model
+    :param texts: The actual text to consider
+    :return: DataFrame with the most dominant topic per document (in texts)
+    """
+    sent_topics_df = pd.DataFrame()
+
+    # Get the main topic in each document
+    for i, row in enumerate(ldamodel[corpus]):
+        row = sorted(row, key=lambda x: (x[1]), reverse=True)
+        # Get the dominant topic, percent contribution and keywords for each document
+        for j, (topic_num, prop_topic) in enumerate(row):
+            if j == 0:
+                # This is the dominant topic
+                wp = ldamodel.show_topic(topic_num)
+                topic_keywords = ", ".join([word for word, prop in wp])
+                sent_topics_df = send_topics_df.append(pd.Series([int(topic_num), round(prop_topic, 4), topic_keywords]), ignore_index=True)
+            else:
+                break
+    sent_topics_df.columns = ['dominant_topic', 'percent_contribution', 'topic_keywords']
+
+    # Add original text to the end of the output
+    contents = pd.Series(texts)
+    sent_topics_df = pd.concat([sent_topics_df, contents], axis=1)
+
+    return sent_topics_df
 
 
+def format_dominant_topics_df(df):
+    """
+    Formats the output of format_topics_sentences
+    :param df: Output of format_topics_sentences
+    :return: Formatted DataFrame
+    """
+    df_dominant_topic = df.reset_index()
+    df_dominant_topic.columns = ['document_number', 'dominant_topic', 'topic_percent_contribution', 'keywords', 'text']
 
+    return df_dominant_topic
+
+
+def get_most_representative_document_per_topic(df):
+
+    # Group top 5 sentences under each topic
+    sent_topics_sorteddf_mallet = pd.DataFrame()
+
+    sent_topics_outdf_grpd = df.groupby('dominant_topic')
+
+    for i, grp in sent_topics_outdf_grpd:
+        sent_topics_sorteddf_mallet = pd.concat([sent_topics_sorteddf_mallet, grp.sort_values(['percent_contribution'], ascending=[0]).head(1)], axis=0)
+
+    # reset index
+    sent_topics_sorteddf_mallet.reset_index(drop=True, inplace=True)
+
+    # format
+    sent_topics_sorteddf_mallet.columns = ['topic_number', 'topic_percent_contribution', 'keywords', 'text']
+
+    return sent_topics_sorteddf_mallet
