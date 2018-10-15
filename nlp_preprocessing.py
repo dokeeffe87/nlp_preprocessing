@@ -332,7 +332,11 @@ def format_dominant_topics_df(df):
 
 
 def get_most_representative_document_per_topic(df):
-
+    """
+    Finds the most representative document by found topic.  Helps with interpreting some LDA topics.
+    :param df: Input DataFrame.  Should be the output of format_topics_sentences
+    :return: DataFrame with the most representative text per topic.
+    """
     # Group top 5 sentences under each topic
     sent_topics_sorteddf_mallet = pd.DataFrame()
 
@@ -348,3 +352,27 @@ def get_most_representative_document_per_topic(df):
     sent_topics_sorteddf_mallet.columns = ['topic_number', 'topic_percent_contribution', 'keywords', 'text']
 
     return sent_topics_sorteddf_mallet
+
+
+def topic_distribution_across_docs(df):
+    """
+    Gets the distribution of topics across all documents
+    :param df: DataFrame, should be the output of format_topics_sentences
+    :return: DataFrame with the topic distribution across all documents
+    """
+    # Number of documents for each topic
+    topic_counts = df['dominant_topic'].value_counts()
+
+    # Percentage of documents for each topic
+    topic_contribution = round(topic_counts/topic_counts.sum(), 4)
+
+    # Topic number and keywords
+    topic_num_keywords = df[['dominant_topic', 'topic_keywords']]
+
+    # Concat
+    df_dominant_topics = pd.concat([topic_num_keywords, topic_counts, topic_contribution], axis=1)
+
+    # Rename columns
+    df_dominant_topics.columns = ['dominant_topic', 'topic_keyword', 'number_of_documents', 'percentage_of_documents']
+
+    return df_dominant_topics
