@@ -3,6 +3,7 @@ from __future__ import division
 import re
 import gensim
 import gensim.corpora as corpora
+import matplotlib.pyplot as plt
 from gensim.utils import simple_preprocess
 from gensim.models import CoherenceModel
 
@@ -17,6 +18,7 @@ from langdetect import detect
 
 from tqdm import tqdm
 
+from pprint import pprint
 
 import warnings
 
@@ -92,16 +94,17 @@ def sent_to_words(data_list):
     """
     # Tokenize words and remove punctuation
     for sentence in tqdm(data_list):
-        yield (gensim.utils.simple_preprocessing(str(sentence), deacc=True))
+        yield (gensim.utils.simple_preprocess(str(sentence), deacc=True))
 
 
-def remove_stopwords(texts):
+def remove_stopwords(texts, stop_words=stopwords):
     """
     Removes stopwords from input text
     :param texts: Text to process
+    :param stop_words: List of stop words to filter.
     :return: List of Lists.  Each document becomes a list of processed words without stopwords
     """
-    return [[word for word in simple_preprocess(str(doc)) if word not in stop_words] for doc in tqdm(texts)]
+    return [[word for word in simple_preprocess(str(doc)) if word not in stop_words.words()] for doc in tqdm(texts)]
 
 
 def make_bigrams_trigrams(texts, min_count=5, threshold=100):
@@ -154,7 +157,7 @@ def create_corpus(id2word, data_lemmatized):
     return [id2word.doc2bow(text) for text in tqdm(data_lemmatized)]
 
 
-def lda_preprocess(df: object, text_col: object, lang_list: list, min_count=5, threshold=100, trigrams=False) -> object:
+def lda_preprocess(df, text_col, lang_list, min_count=5, threshold=100, trigrams=False):
     """
     Applies the functions above to preprocess text data for
     :param df: A DataFrame which contains the text you want to process
@@ -180,7 +183,7 @@ def lda_preprocess(df: object, text_col: object, lang_list: list, min_count=5, t
     print('End sentence preprocessing')
 
     print('Begin stopword removal')
-    data_words_nostops = remove_stopwords(data_words)
+    data_words_nostops = remove_stopwords(data_words, stop_words=stopwords)
     print('end remove stopwords')
 
     # make bigrams and trigrams.
@@ -227,7 +230,7 @@ def compute_coherence_values(dictionary, corpus, texts, limit, start=2, step=3, 
             model = gensim.models.wrappers.LdaMallet(mallet_path=mallet_path,
                                                      corpus=corpus,
                                                      num_topics=num_topics,
-                                                     id2word=id2word)
+                                                     id2word=dictionary)
         else:
             # TODO: Add support for all parameters.
             model = gensim.models.ldamodel.LdaModel(corpus=corpus,
