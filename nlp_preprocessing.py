@@ -387,3 +387,31 @@ def topic_distribution_across_docs(df):
     return df_dominant_topics
 
 
+def get_topics_by_document(ldamodel, corpus):
+    """
+    Gets the contribution of each topic for each document in the corpus
+    :param ldamodel: The trained LDA model
+    :param corpus: The corpus for the documents
+    :return: DataFrame with the contribution of each topic to the documents in the corpus
+    """
+    documents_topic_dists = {}
+    for i, row in enumerate(ldamodel[corpus]):
+        row = sorted(row, key=lambda n: (n[1]), reverse=True)
+        document_number = i
+        topic_dict = {}
+        for tup_ in row:
+            topic_num = 'topic_{0}_contribution'.format(tup_[0])
+            topic_dict[topic_num] = tup_[1]
+        documents_topic_dists[document_number] = topic_dict
+
+    document_topic_dists_df = pd.DataFrame.from_dict(document_topic_dists_df, orient='index')
+    document_topic_dists_df.reset_index(inplace=True)
+    document_topic_dists_df.rename(index=str, columns={'index': 'document_number'}, inplace=True)
+
+    arrange_cols = ['document_number'] + ['topic_{0}_contribution'.format(x) for x in range(0, document_topic_dists_df.shape[1] - 1)]
+    document_topic_dists_df = document_topic_dists_df[arrange_cols]
+
+    return document_topic_dists_df
+
+
+
