@@ -1,6 +1,7 @@
 from __future__ import division
 
 import re
+import pandas as pd
 import gensim
 import gensim.corpora as corpora
 import matplotlib.pyplot as plt
@@ -94,7 +95,7 @@ def sent_to_words(data_list):
     """
     # Tokenize words and remove punctuation
     for sentence in tqdm(data_list):
-        yield (gensim.utils.simple_preprocess(str(sentence), deacc=True))
+        yield (gensim.utils.simple_preprocess(unicode(sentence), deacc=True))
 
 
 def remove_stopwords(texts, stop_words=stopwords):
@@ -104,7 +105,7 @@ def remove_stopwords(texts, stop_words=stopwords):
     :param stop_words: List of stop words to filter.
     :return: List of Lists.  Each document becomes a list of processed words without stopwords
     """
-    return [[word for word in simple_preprocess(str(doc)) if word not in stop_words.words()] for doc in tqdm(texts)]
+    return [[word for word in simple_preprocess(unicode(doc)) if word not in stop_words.words()] for doc in tqdm(texts)]
 
 
 def make_bigrams_trigrams(texts, min_count=5, threshold=100):
@@ -264,6 +265,7 @@ def evaluate_model_coherence(model_list, coherence_values, limit, start=2, step=
     """
     # Plot the coherence scores:
     x = range(start, limit, step)
+    plt.figure(figsize=(20, 10))
     plt.plot(x, coherence_values)
     plt.xlabel("Number of topics")
     plt.ylabel('Cv coherence scores')
@@ -310,7 +312,7 @@ def format_topics_sentences(ldamodel, corpus, texts):
                 # This is the dominant topic
                 wp = ldamodel.show_topic(topic_num)
                 topic_keywords = ", ".join([word for word, prop in wp])
-                sent_topics_df = send_topics_df.append(pd.Series([int(topic_num), round(prop_topic, 4), topic_keywords]), ignore_index=True)
+                sent_topics_df = sent_topics_df.append(pd.Series([int(topic_num), round(prop_topic, 4), topic_keywords]), ignore_index=True)
             else:
                 break
     sent_topics_df.columns = ['dominant_topic', 'percent_contribution', 'topic_keywords']
@@ -365,17 +367,23 @@ def topic_distribution_across_docs(df):
     """
     # Number of documents for each topic
     topic_counts = df['dominant_topic'].value_counts()
+    topic_counts_df = pd.DataFrame(topic_counts)
+    topic_counts_df.reset_index(inplace=True)
+    topic_counts_df.columns = ['dominant_topic', 'number_of_documents']
 
     # Percentage of documents for each topic
-    topic_contribution = round(topic_counts/topic_counts.sum(), 4)
+    topic_contribution = topic_counts/topic_counts.sum()
+    topic_contribution_df = pd.DataFrame(topic_contribution)
+    topic_contribution_df.reset_index(inplace=True)
+    topic_contribution_df.columns = ['dominant_topic', 'percentage_of_documents']
 
     # Topic number and keywords
-    topic_num_keywords = df[['dominant_topic', 'topic_keywords']]
+    topic_num_keywords = df[['dominant_topic', 'topic_keywords']].drop_duplicates()
 
-    # Concat
-    df_dominant_topics = pd.concat([topic_num_keywords, topic_counts, topic_contribution], axis=1)
-
-    # Rename columns
-    df_dominant_topics.columns = ['dominant_topic', 'topic_keyword', 'number_of_documents', 'percentage_of_documents']
+    # merge
+    df_dominant_topics = topic_counts_df.merge(topic_contribution_df, on='dominant_topic')
+    df_dominant_topics = df_dominant_topics.merge(topic_num_keywords, on='dominant_topic')
 
     return df_dominant_topics
+
+
