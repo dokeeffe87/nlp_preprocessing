@@ -212,7 +212,7 @@ def lda_preprocess(df, text_col, lang_list, min_count=5, threshold=100, trigrams
     return id2word, corpus, data_lemmatized
 
 
-def compute_coherence_values(dictionary, corpus, texts, limit, start=2, step=3, mallet_path=None):
+def compute_coherence_values(dictionary, corpus, texts, limit, start=2, step=3, mallet_path=None, random_state=0, update_every=None, chunksize=None, passes=None, alpha='auto', per_word_topics=True):
     """
     Compute the Cv coherence for various number of topics
     :param dictionary: Dictionary
@@ -293,9 +293,10 @@ def evaluate_model_coherence(model_list, coherence_values, limit, start=2, step=
     return best_model, x[best_index], max(coherence_values), best_index
 
 
-def format_topics_sentences(ldamodel, corpus, texts):
+def format_topics_sentences_mallet(ldamodel, corpus, texts):
     """
-    Determine the dominant topic in a document (sentence)
+    Determine the dominant topic in a document (sentence).  Works with Mallet models.  
+    Use the function format_topics_sentences_gensim with gensim's built in LDA model.
     :param ldamodel: The trained LDA model
     :param corpus: The corpus used for the LDA model
     :param texts: The actual text to consider
@@ -307,12 +308,42 @@ def format_topics_sentences(ldamodel, corpus, texts):
     for i, row in enumerate(ldamodel[corpus]):
         row = sorted(row, key=lambda x: (x[1]), reverse=True)
         # Get the dominant topic, percent contribution and keywords for each document
-        for j, (topic_num, prop_topic) in enumerate(row):
+        for j, (topic_num, prob_topic) in enumerate(row):
             if j == 0:
                 # This is the dominant topic
                 wp = ldamodel.show_topic(topic_num)
                 topic_keywords = ", ".join([word for word, prop in wp])
                 sent_topics_df = sent_topics_df.append(pd.Series([int(topic_num), round(prop_topic, 4), topic_keywords]), ignore_index=True)
+            else:
+                break
+    sent_topics_df.columns = ['dominant_topic', 'percent_contribution', 'topic_keywords']
+
+    # Add original text to the end of the output
+    contents = pd.Series(texts)
+    sent_topics_df = pd.concat([sent_topics_df, contents], axis=1)
+
+    return sent_topics_df
+
+
+def format_topics_sentences_gensim(ldamodel, corpus, texts):
+    """
+    Determine the dominant topic in a document (sentence).  Works with gensim lda models.  
+    Use the function format_topics_sentences_mallet with mallet LDA models.
+    :param ldamodel: The trained LDA model
+    :param corpus: The corpus used for the LDA model
+    :param texts: The actual text to consider
+    :return: DataFrame with the most dominant topic per document (in texts)
+    """
+    sent_topics_df = pd.DataFrame()
+
+    # Get the main topic in each document
+    for i, row in enumerate(ldamodel.get_document_topics(corpus)):
+        row = sorted(row, key=lambda x: (x[1]), reverse=True)
+        for j, tup in enumerate(row):
+            if j == 0:
+                wp = ldamodel.show_topic(tup[0])
+                topic_keywords = ", ".join([word for word, prop in wp])
+                sent_topics_df = sent_topics_df.append(pd.Series([int(tup[0]), round(tup[1], 4), topic_keywords]), ignore_index=True)
             else:
                 break
     sent_topics_df.columns = ['dominant_topic', 'percent_contribution', 'topic_keywords']
