@@ -1,5 +1,7 @@
 from __future__ import division
 
+import os
+import gzip
 import re
 import pandas as pd
 import gensim
@@ -22,6 +24,8 @@ from tqdm import tqdm
 from pprint import pprint
 
 import warnings
+
+import sklearn.preprocessing
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 nlp = spacy.load('en', disable=['parser', 'ner'])
@@ -261,8 +265,8 @@ def lda_preprocess(df, text_col, lang_list, min_count=5, threshold=100, trigrams
 
     return id2word, corpus, data_lemmatized
 
-# TODO: Turn all of these parameters into a kwargs. 
-def compute_coherence_values(dictionary, corpus, texts, limit, coherence='c_v', start=2, step=3, mallet_path=None, random_state=0, update_every=1, chunksize=100, passes=1, alpha='auto', eta=None, per_word_topics=True, iterations=50, eval_every=10):
+
+def compute_coherence_values(dictionary, corpus, texts, limit, coherence='c_v', start=2, step=3, mallet_path=None, args={}):
     """
     Compute the Cv coherence for various number of topics
     :param dictionary: Dictionary
@@ -272,6 +276,7 @@ def compute_coherence_values(dictionary, corpus, texts, limit, coherence='c_v', 
     :param start: The minimum number of topics
     :param step: The step size for the number of topics to consider
     :param mallet_path: Path to mallet if you want to use it for the LDA model
+    :param args: Dictionary of parameters to send to LDA models (Gensim or Mallet)
     :return: list of LDA topic models and the list of corresponding coherence values
     """
     coherence_values = []
@@ -281,24 +286,16 @@ def compute_coherence_values(dictionary, corpus, texts, limit, coherence='c_v', 
             model = gensim.models.wrappers.LdaMallet(mallet_path=mallet_path,
                                                      corpus=corpus,
                                                      num_topics=num_topics,
-                                                     id2word=dictionary)
+                                                     id2word=dictionary,
+                                                     **args)
         else:
-            # TODO: Add support for all parameters.
-            # Note: Gensim's built in LDA model uses a different inference algorithm than Mallet (which uses Gibbs sampling). Gibbs sampling is more precise, b
+            # Note: Gensim's built in LDA model uses a different inference algorithm than Mallet (which uses Gibbs sampling). Gibbs sampling is more precise,
             # but slower.  To get comparable results with the built in LDA model in Gensim, trying increasing the number of passes through the corpus
             # and the number of iterations from the default.
             model = gensim.models.ldamodel.LdaModel(corpus=corpus,
                                                     id2word=dictionary,
                                                     num_topics=num_topics,
-                                                    random_state=random_state,
-                                                    update_every=update_every,
-                                                    chunksize=chunksize,
-                                                    passes=passes,
-                                                    alpha=alpha,
-                                                    per_word_topics=per_word_topics,
-                                                    iterations=iterations,
-                                                    eval_every=eval_every,
-                                                    eta=eta)
+                                                    **args)
         model_list.append(model)
         coherence_model = CoherenceModel(model=model,
                                          texts=texts,
@@ -349,7 +346,7 @@ def evaluate_model_coherence(model_list, coherence_values, limit, start=2, step=
     return best_model, x[best_index], max(coherence_values), best_index
 
 
-def format_topics_sentences_mallet(ldamodel, corpus, texts):
+def format_topics_sentences(ldamodel, corpus, texts, mallet=False):
     """
     Determine the dominant topic in a document (sentence).  Works with Mallet models.  
     Use the function format_topics_sentences_gensim with gensim's built in LDA model.
@@ -359,9 +356,12 @@ def format_topics_sentences_mallet(ldamodel, corpus, texts):
     :return: DataFrame with the most dominant topic per document (in texts)
     """
     sent_topics_df = pd.DataFrame()
-
+    if mallet:
+        topics_dist_model = ldamodel[corpus]
+    else:
+        topics_dist_model = ldamodel.get_document_topics(corpus)
     # Get the main topic in each document
-    for i, row in enumerate(ldamodel[corpus]):
+    for i, row in enumerate(topics_dist_model):
         row = sorted(row, key=lambda x: (x[1]), reverse=True)
         # Get the dominant topic, percent contribution and keywords for each document
         for j, (topic_num, prob_topic) in enumerate(row):
@@ -474,7 +474,7 @@ def topic_distribution_across_docs(df):
     return df_dominant_topics
 
 
-def get_topics_by_document(ldamodel, corpus):
+def get_topics_by_document(ldamodel, corpus, mallet=False):
     """
     Gets the contribution of each topic for each document in the corpus
     :param ldamodel: The trained LDA model
@@ -482,7 +482,13 @@ def get_topics_by_document(ldamodel, corpus):
     :return: DataFrame with the contribution of each topic to the documents in the corpus
     """
     documents_topic_dists = {}
-    for i, row in enumerate(ldamodel[corpus]):
+
+    if mallet:
+        topic_dist_model = ldamodel[corpus]
+    else:
+        topic_dist_model = ldamodel.get_document_topics(corpus)
+
+    for i, row in enumerate(topic_dist_model):
         row = sorted(row, key=lambda n: (n[1]), reverse=True)
         document_number = i
         topic_dict = {}
@@ -491,14 +497,79 @@ def get_topics_by_document(ldamodel, corpus):
             topic_dict[topic_num] = tup_[1]
         documents_topic_dists[document_number] = topic_dict
 
-    document_topic_dists_df = pd.DataFrame.from_dict(document_topic_dists_df, orient='index')
+    document_topic_dists_df = pd.DataFrame.from_dict(documents_topic_dists, orient='index')
     document_topic_dists_df.reset_index(inplace=True)
     document_topic_dists_df.rename(index=str, columns={'index': 'document_number'}, inplace=True)
 
-    arrange_cols = ['document_number'] + ['topic_{0}_contribution'.format(x) for x in range(0, document_topic_dists_df.shape[1] - 1)]
-    document_topic_dists_df = document_topic_dists_df[arrange_cols]
+    if mallet:
+        # TODO: fix this to work with output from Gensim LDA model.
+        arrange_cols = ['document_number'] + ['topic_{0}_contribution'.format(x) for x in range(0, document_topic_dists_df.shape[1] - 1)]
+        document_topic_dists_df = document_topic_dists_df[arrange_cols]
 
     return document_topic_dists_df
 
 
+def extract_data_for_mallet_pyldaviz(ldamodel):
+    """
+    Function to format output of Mallet LDA models for use with pyLDAviz.
+    Based largely on: http://jeriwieringa.com/2018/07/17/pyLDAviz-and-Mallet/#comment-4018495276
+    :param ldamodel: Trained Mallet LDA model
+    :return: Dictionary with required info for pyLDAviz.  Use it by calling pyLDAviz.prepare(**data_to_viz)
+    """
+    
+    # Get the path to the model statefile. 
+    # This looks like the easiest way to access alpha and beta parameters, unfortunately.
+    state_file = ldamodel.fstate()
+    
+    # Get the alpha and beta parameters
+    with gzip.open(state_file, 'r') as state:
+        params = [x.decode('utf8').strip() for x in state.readlines()[1:3]]
+
+    extracted_params = (list(params[0].split(":")[1].split(" ")), float(params[1].split(":")[1]))
+    alpha_ = [float(x) for x in extracted_params[0][1:]]
+    beta_ = extracted_params[1]
+    
+    # Get the remaining info in the statefile.  
+    # This is also contained in the dataset, but it's already here, so we might a well use it.
+    df_state = pd.read_csv(state_file,
+                           compression='gzip',
+                           sep=' ',
+                           skiprows=[1,2])
+    
+    df_state['type'] = df_state['type'].astype(str)
+    
+    # Get the document lengths
+    docs_ = df_state.groupby('#doc')['type'].count().reset_index(name ='doc_length')
+    
+    # Get the vocabulary: the words in the documents and their frequencies.
+    vocab_ = df_state['type'].value_counts().reset_index()
+    vocab_.columns = ['type', 'term_freq']
+    vocab_ = vocab_.sort_values(by='type', ascending=True)
+    
+    # Get the topic term matrix, phi:
+    phi_df = df_state.groupby(['topic', 'type'])['type'].count().reset_index(name ='token_count')
+    phi_df = phi_df.sort_values(by='type', ascending=True)
+    # Compute phi
+    matrix_phi = phi_df.pivot(index='topic', columns='type', values='token_count').fillna(value=0)
+    matrix_phi = matrix_phi.values + beta_
+    
+    phi = sklearn.preprocessing.normalize(matrix_phi, norm='l1', axis=1)
+    
+    # Generate the document-topic matrix theta:
+    theta_df = df_state.groupby(['#doc', 'topic'])['topic'].count().reset_index(name ='topic_count')
+    # Compute theta:
+    matrix_theta = theta_df.pivot(index='#doc', columns='topic', values='topic_count')
+    matrix_theta = matrix_theta.values + alpha_
+
+    theta = sklearn.preprocessing.normalize(matrix_theta, norm='l1', axis=1)
+    
+    # Format data for us in pyLDAviz 
+    
+    data_to_viz = {'topic_term_dists': phi, 
+                   'doc_topic_dists': theta,
+                   'doc_lengths': list(docs_['doc_length']),
+                   'vocab': list(vocab_['type']),
+                   'term_frequency': list(vocab_['term_freq'])}
+    
+    return data_to_viz
 
