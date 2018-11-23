@@ -13,7 +13,7 @@ import spacy
 import pyLDAvis
 import pyLDAvis.gensim
 
-from nltk.corpus import stopwords
+import nltk
 
 from langdetect import detect
 
@@ -26,6 +26,28 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 nlp = spacy.load('en', disable=['parser', 'ner'])
 
+# Dictionary of supported languages (for stopwords), from their ISO codes to english names.
+supported_languages = {'sv': 'swedish',
+                       'da': 'danish',
+                       'id': 'indonesian',
+                       'az': 'azerbaijani',
+                       'fi': 'finnish',
+                       'no': 'norwegian',
+                       'de': 'german',
+                       'kk': 'kazakh',
+                       'nl': 'dutch',
+                       'fr': 'french',
+                       'ru': 'russian',
+                       'el': 'greek',
+                       'es': 'spanish',
+                       'ro': 'romanian',
+                       'en': 'english',
+                       'pt': 'portuguese',
+                       'tr': 'turkish',
+                       'ar': 'arabic',
+                       'ne': 'nepali',
+                       'hu': 'hungarian',
+                       'it': 'italian'}
 
 def remove_non_english(df, text_col):
     """
@@ -66,6 +88,26 @@ def remove_non_custom_language(df, text_col, lang_list):
     return df.loc[df.language.isin(lang_list)]
 
 
+def get_stopwords(lang_list):
+    """
+    Gets the list of stopwords for the specified languages.  Currently only supports the languages listed in the supported_languages
+    dictionary.  If you pass it a language not currently supported, it will be skipped.
+    :param lang_list: List of ISO codes for required languages
+    :return: List of stopwords
+    """
+    words_to_return = []
+    for lang in lang_list:
+        try:
+            lang_name = supported_languages[lang]
+            print(lang_name)
+            words_to_return += nltk.corpus.stopwords.words(lang_name)
+            print(len(words_to_return))
+        except KeyError:
+            print('Language {0} not currently supported for stopword remova. Skipping it'.format(lang))
+    
+    return words_to_return
+
+
 def pre_process_regex(df, text_col):
     """
     Removes newline characters and single quotes
@@ -98,14 +140,15 @@ def sent_to_words(data_list):
         yield (gensim.utils.simple_preprocess(unicode(sentence), deacc=True))
 
 
-def remove_stopwords(texts, stop_words=stopwords):
+def remove_stopwords(texts, stop_words):
     """
     Removes stopwords from input text
     :param texts: Text to process
     :param stop_words: List of stop words to filter.
     :return: List of Lists.  Each document becomes a list of processed words without stopwords
     """
-    return [[word for word in simple_preprocess(unicode(doc)) if word not in stop_words.words()] for doc in tqdm(texts)]
+    # return [[word for word in simple_preprocess(unicode(doc)) if word not in simple_preprocess(unicode(stop_words))] for doc in tqdm(texts)]
+    return [[word for word in doc if word not in stop_words] for doc in tqdm(texts)]
 
 
 def make_bigrams_trigrams(texts, min_count=5, threshold=100):
@@ -158,7 +201,7 @@ def create_corpus(id2word, data_lemmatized):
     return [id2word.doc2bow(text) for text in tqdm(data_lemmatized)]
 
 
-def lda_preprocess(df, text_col, lang_list, min_count=5, threshold=100, trigrams=False):
+def lda_preprocess(df, text_col, lang_list, min_count=5, threshold=100, trigrams=False, custom_remove=None):
     """
     Applies the functions above to preprocess text data for
     :param df: A DataFrame which contains the text you want to process
@@ -167,6 +210,7 @@ def lda_preprocess(df, text_col, lang_list, min_count=5, threshold=100, trigrams
     :param min_count: min_count for bigram model.  The higher this is, the harder it is to make bigrams
     :param threshold: threshold for bigram model.  The higher this is, the harder it is to make bigrams
     :param trigrams: True if you want to lemmatize on trigrams, default is False
+    :param custom_remove: List of additional words to remove (treat as stopwords).
     :return: dictionary, corpus, and lemmatized text data
     """
     print("Begin LDA preprocessing")
@@ -184,9 +228,15 @@ def lda_preprocess(df, text_col, lang_list, min_count=5, threshold=100, trigrams
     print('End sentence preprocessing')
 
     print('Begin stopword removal')
-    data_words_nostops = remove_stopwords(data_words, stop_words=stopwords)
+    print('Generating stopword list for specified languages: {0}'.format(df_lang['language'].unique().tolist()))
+    stop_words = get_stopwords(lang_list)
+    if custom_remove:
+        print("Adding custom words for removal")
+        stop_words += custom_remove
+        data_words_nostops = remove_stopwords(data_words, stop_words=stop_words)
+    else:
+        data_words_nostops = remove_stopwords(data_words, stop_words=stop_words)
     print('end remove stopwords')
-
     # make bigrams and trigrams.
     print('Building bigrams and trigrams')
     data_words_bigrams, data_words_trigrams = make_bigrams_trigrams(data_words_nostops, min_count=min_count, threshold=threshold)
@@ -194,9 +244,9 @@ def lda_preprocess(df, text_col, lang_list, min_count=5, threshold=100, trigrams
     # Lemmatize:
     print("Begin lemmatization")
     if trigrams:
-        data_lemmatized = lemmatization(data_words_bigrams, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ABV'])
-    else:
         data_lemmatized = lemmatization(data_words_trigrams, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ABV'])
+    else:
+        data_lemmatized = lemmatization(data_words_bigrams, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ABV'])
     print('End lemmatization')
 
     print('Begin creating dictionary')
@@ -211,8 +261,8 @@ def lda_preprocess(df, text_col, lang_list, min_count=5, threshold=100, trigrams
 
     return id2word, corpus, data_lemmatized
 
-
-def compute_coherence_values(dictionary, corpus, texts, limit, start=2, step=3, mallet_path=None, random_state=0, update_every=None, chunksize=None, passes=None, alpha='auto', per_word_topics=True):
+# TODO: Turn all of these parameters into a kwargs. 
+def compute_coherence_values(dictionary, corpus, texts, limit, coherence='c_v', start=2, step=3, mallet_path=None, random_state=0, update_every=1, chunksize=100, passes=1, alpha='auto', eta=None, per_word_topics=True, iterations=50, eval_every=10):
     """
     Compute the Cv coherence for various number of topics
     :param dictionary: Dictionary
@@ -234,20 +284,26 @@ def compute_coherence_values(dictionary, corpus, texts, limit, start=2, step=3, 
                                                      id2word=dictionary)
         else:
             # TODO: Add support for all parameters.
+            # Note: Gensim's built in LDA model uses a different inference algorithm than Mallet (which uses Gibbs sampling). Gibbs sampling is more precise, b
+            # but slower.  To get comparable results with the built in LDA model in Gensim, trying increasing the number of passes through the corpus
+            # and the number of iterations from the default.
             model = gensim.models.ldamodel.LdaModel(corpus=corpus,
                                                     id2word=dictionary,
                                                     num_topics=num_topics,
-                                                    random_state=0,
-                                                    update_every=1,
-                                                    chunksize=100,
-                                                    passes=10,
-                                                    alpha='auto',
-                                                    per_word_topics=True)
+                                                    random_state=random_state,
+                                                    update_every=update_every,
+                                                    chunksize=chunksize,
+                                                    passes=passes,
+                                                    alpha=alpha,
+                                                    per_word_topics=per_word_topics,
+                                                    iterations=iterations,
+                                                    eval_every=eval_every,
+                                                    eta=eta)
         model_list.append(model)
         coherence_model = CoherenceModel(model=model,
                                          texts=texts,
                                          dictionary=dictionary,
-                                         coherence='c_v')
+                                         coherence=coherence)
         coherence_values.append(coherence_model.get_coherence())
 
     return model_list, coherence_values
@@ -313,7 +369,7 @@ def format_topics_sentences_mallet(ldamodel, corpus, texts):
                 # This is the dominant topic
                 wp = ldamodel.show_topic(topic_num)
                 topic_keywords = ", ".join([word for word, prop in wp])
-                sent_topics_df = sent_topics_df.append(pd.Series([int(topic_num), round(prop_topic, 4), topic_keywords]), ignore_index=True)
+                sent_topics_df = sent_topics_df.append(pd.Series([int(topic_num), round(prob_topic, 4), topic_keywords]), ignore_index=True)
             else:
                 break
     sent_topics_df.columns = ['dominant_topic', 'percent_contribution', 'topic_keywords']
