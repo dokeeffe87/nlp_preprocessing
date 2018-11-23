@@ -556,7 +556,7 @@ def extract_data_for_mallet_pyldaviz(ldamodel):
     # Generate the document-topic matrix theta:
     theta_df = df_state.groupby(['#doc', 'topic'])['topic'].count().reset_index(name ='topic_count')
     # Compute theta:
-    matrix_theta = theta_df.pivot(index='#doc', columns='topic', values='topic_count')
+    matrix_theta = theta_df.pivot(index='#doc', columns='topic', values='topic_count').fillna(value=0)
     matrix_theta = matrix_theta.values + alpha_
 
     theta = sklearn.preprocessing.normalize(matrix_theta, norm='l1', axis=1)
