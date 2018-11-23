@@ -107,7 +107,7 @@ def get_stopwords(lang_list):
             words_to_return += nltk.corpus.stopwords.words(lang_name)
             print(len(words_to_return))
         except KeyError:
-            print('Language {0} not currently supported for stopword remova. Skipping it'.format(lang))
+            print('Language {0} not currently supported for stopword removal. Skipping it'.format(lang))
     
     return words_to_return
 
