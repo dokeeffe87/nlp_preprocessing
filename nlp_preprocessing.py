@@ -7,6 +7,10 @@ import pandas as pd
 import gensim
 import gensim.corpora as corpora
 import matplotlib.pyplot as plt
+import urllib
+import zipfile
+import collections
+import tensorflow as tf
 from gensim.utils import simple_preprocess
 from gensim.models import CoherenceModel
 
@@ -90,6 +94,50 @@ def remove_non_custom_language(df, text_col, lang_list):
     df['language'] = df[text_col].progress_apply(find_lang)
 
     return df.loc[df.language.isin(lang_list)]
+
+
+def download_file(filename, url):
+	"""
+	Download a file if it exists at a given url
+	:param filename: The name of the file you are trying to download
+	:param url: The url where you want to download the file from
+	:return: The name of the file which should be in your current working directory
+	"""
+	if not os.path.exists(filename):
+		filename, _ = urllib.urlretrieve(url + filename, filename)
+	statinfo = os.stat(filename)
+	if not statinfo:
+		print('File not found')
+	return filename
+
+
+def read_data_from_zip(filename):
+	"""
+	Get text data out of a supplied zip file
+	:param filename: Name of the zip file to use
+	:return: The text data as a list of a list unicode strings. The list of list structure is to make the returned object immediately compatible with dictionary creation.
+	"""
+	with zipfile.ZipFile(filename) as f:
+		# Tensorflow compat adds compatibility between python 2 and 3 functions
+		# as_str returns a unicode string from the argument
+		# namelist returns a list of archiv memebers by name from the zip file
+		data = [tf.compat.as_str(f.read(f.namelist()[0])).split()]
+	return data
+
+
+def trim_vocabulary(vocab, vocab_size):
+	"""
+	A function to trim down a large vocabulary to the vocab_size most common words
+	:param vocab: The vocabulary. Assumes a list of lists, each list is a document and the sublist is the vocabulary for that document
+	:param vocab_size: The number of most common words to retain
+	:return: A list of lists. Each list contains another list with the vocabulary for each document trimmed down to the vocab_size most common words
+	"""
+	trimmed_vocabs = []
+	for word_list in vocab:
+		counter = collections.Counter(word_list)
+		most_common = sorted(counter, key=counter.get,reverse=True)[:vocab_size]
+		trimmed_vocabs.append(most_common)
+	return trimmed_vocabs
 
 
 def get_stopwords(lang_list):
@@ -188,9 +236,28 @@ def create_dictionary(data_lemmatized):
     """
     Create the dictionary to use for topic modeling
     :param data_lemmatized: Lemmatized texts
-    :return: Dictionary
+    :return: Dictionary. Note this object has  built in method to get the reversed dictionary.
     """
     return corpora.Dictionary(data_lemmatized)
+
+
+def create_reversed_dictionary(dictionary_):
+	"""
+	Create the reversed dictionary to look up ids by word
+	:param dictionary_: The dictionary created from the vocabulary
+	"return: a dictionary object containing the reverse value-key pairs of dictionary_
+	"""
+	if type(dictionary_).__name__ == 'Dictionary':
+		# If the dictionary is a gensim dictionary object, use the built in methond.
+		print('Gensim Dictionary type detected')
+		return dictionary_.token2id
+	elif type(dictionary_).__name__ == 'dict':
+		print('Input dictionary of type python dict')
+		# If the dictionary is a regular python dictionary, return the reversed dictionary
+		return dict(zip(dictionary_.values(), dictionary_.keys()))
+	else:
+		print('Unknown dictionary type')
+		return None
 
 
 def create_corpus(id2word, data_lemmatized):
