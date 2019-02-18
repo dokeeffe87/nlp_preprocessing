@@ -232,13 +232,14 @@ def lemmatization(texts, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ABV']):
     return texts_out
 
 
-def create_dictionary(data_lemmatized):
+def create_dictionary(data_lemmatized, args={}):
     """
     Create the dictionary to use for topic modeling
     :param data_lemmatized: Lemmatized texts
-    :return: Dictionary. Note this object has  built in method to get the reversed dictionary.
+    :param args: Dictionary of parameters to send to gensim Dictionary
+    :return: Dictionary. Note this object has  built in method to get the reversed dictionary
     """
-    return corpora.Dictionary(data_lemmatized)
+    return corpora.Dictionary(data_lemmatized, **args)
 
 
 def create_reversed_dictionary(dictionary_):
@@ -258,6 +259,47 @@ def create_reversed_dictionary(dictionary_):
 	else:
 		print('Unknown dictionary type')
 		return None
+
+
+def build_data_for_keras_skipgram(vocabulary, vocabulary_size):
+    """
+    TODO: Generalize to work with multiple documents.  
+    To use the built in Keras skipgram method, we need a dictionary where the index of the word represents it's rank.  It won't work otherwise. So we can't directly use the Gensim dictionary object. Note that skipgram assumes that the 0th index word represents non-word and is skipped
+    :param vocabulary: Vocabulary. A list of tokenized words.
+    :param vocabulary_size: The integer size of most frequent words to retain
+    :return: The dictionary (index -> word) and reversed dictionary (word -> index)
+    """
+    count = [["UNK", -1]]
+    count.extend(collections.Counter(vocabulary).most_common(vocabulary_size - 1))
+    reversed_dictionary = {}
+    for word, _ in count:
+        reversed_dictionary[word] = len(reversed_dictionary)
+    dictionary = dict(zip(reversed_dictionary.values(), reversed_dictionary.keys()))
+    return dictionary, reversed_dictionary
+
+
+def make_sequence_of_indices_from_vocabulary(vocabulary, reversed_dictionary):
+	"""
+	A function to create a sequence of indices from a given vocabulary.  This is to preserve the sequence of words in the documents for context modeling.
+	:param vocabulary: The vocabulary of words used per document.  Should be a list of lists, one list per document and the sublists should be tokenized words in the document with preserved order
+	:param reversed_dictionary: The reversed_dictionary (word -> index) created from the either the original vocabulary or a trimmed vocabulary.
+	"""
+	sequence_of_indices = []
+	# Keep track of the number of words we have skipped over by trimming the vocabulary
+	unk_count = []
+	for doc_vocab in vocabulary:
+		doc_sequence_of_indices = []
+		doc_unk_count = 0
+		for word in doc_vocab:
+			if word in reversed_dictionary:
+				index = reversed_dictionary[word]
+			else:
+				index = reversed_dictionary['UNK']
+				doc_unk_count += 1
+			doc_sequence_of_indices.append(index)
+		sequence_of_indices.append(doc_sequence_of_indices)
+		unk_count.append(doc_unk_count)
+	return sequence_of_indices, unk_count
 
 
 def create_corpus(id2word, data_lemmatized):
