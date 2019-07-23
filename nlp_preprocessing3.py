@@ -79,6 +79,18 @@ def remove_non_english(df, text_col):
     return df.loc[df.language == 'en', :]
 
 
+def find_lang(x):
+    """
+    Detect language of input string.
+    :param x: String on which to detect language.  It can be any size, but this will generally work much better with longer sentences
+    :return: The detected language, or the string none if language can't be identified
+    """
+    try:
+        return detect(x)
+    except:
+        return 'none'
+
+
 def remove_non_custom_language(df, text_col, lang_list):
     """
     Removes all text except for desired languages
@@ -87,12 +99,6 @@ def remove_non_custom_language(df, text_col, lang_list):
     :param lang_list: List of languages to keep.  Supported languages are list here: https://pypi.org/project/langdetect/
     :return: DataFrame with only selected language text
     """
-
-    def find_lang(x):
-        try:
-            return detect(x)
-        except:
-            return 'none'
 
     tqdm.pandas()
     df['language'] = df[text_col].progress_apply(find_lang)
