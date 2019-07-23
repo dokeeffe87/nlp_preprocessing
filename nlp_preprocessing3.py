@@ -197,7 +197,7 @@ def sent_to_words(data_list):
     # TODO: Make punctuation removal an option.
     # Tokenize words and remove punctuation
     for sentence in tqdm(data_list):
-        yield (gensim.utils.simple_preprocess(unicode(sentence), deacc=True))
+        yield (gensim.utils.simple_preprocess(str(sentence), deacc=True))
 
 
 def remove_stopwords(texts, stop_words):
