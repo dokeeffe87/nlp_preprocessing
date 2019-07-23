@@ -398,6 +398,7 @@ def compute_coherence_values(dictionary, corpus, texts, limit, coherence='c_v', 
     :param corpus: Corpus
     :param texts: List of input texts
     :param limit: The maximum number of topics
+    :param coherence: Coherence score to be used
     :param start: The minimum number of topics
     :param step: The step size for the number of topics to consider
     :param mallet_path: Path to mallet if you want to use it for the LDA model
