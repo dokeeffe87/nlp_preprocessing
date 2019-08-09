@@ -66,12 +66,12 @@ def remove_non_english(df, text_col):
     :param text_col: Column name of text in df
     :return: DataFrame with only english text
     """
-
-    def find_lang(x):
-        try:
-            return detect(x)
-        except:
-            return 'none'
+    # TODO: Test this with changes.
+    # def find_lang(x):
+    #     try:
+    #         return detect(x)
+    #     except:
+    #         return 'none'
 
     tqdm.pandas()
     df['language'] = df[text_col].progress_apply(find_lang)
@@ -132,6 +132,7 @@ def read_data_from_zip(filename):
     :param filename: Name of the zip file to use
     :return: The text data as a list of a list unicode strings. The list of list structure is to make the returned object immediately compatible with dictionary creation.
     """
+    # TODO: test if this is still necessary in python3.
     with zipfile.ZipFile(filename) as f:
         # Tensorflow compat adds compatibility between python 2 and 3 functions
         # as_str returns a unicode string from the argument
@@ -216,6 +217,34 @@ def remove_stopwords(texts, stop_words):
     return [[word for word in doc if word not in stop_words] for doc in tqdm(texts)]
 
 
+def remove_punctuation_string(text_str, punc_):
+    """
+    Removes characters from punctuation list. Returns a string
+    :param text_str: String with text to clean
+    :param punc_: List of characters to remove
+    :return: Text string with elements of punc_ removed
+    """
+    punc_ = "".join(punc_)
+    unicode_line = text_str.translate({ord(c): None for c in punc_})
+
+    return unicode_line
+
+
+def remove_stopwords_string(text_str, stop_words):
+    """
+    Removed words from input text. Returns a string
+    :param text_str: String with text to clean
+    :param stop_words: List of words to remove
+    :return: String with elements of stop_words removed
+    """
+    text_str = text_str.lower()
+    text_list = text_str.split(' ')
+    text_list = [x for x in text_list if x not in stop_words]
+    text_str_return = " ".join(text_list)
+
+    return text_str_return
+
+
 def make_bigrams_trigrams(texts, min_count=5, threshold=100):
     """
     Makes bigrams and trigrams out of input texts
@@ -224,7 +253,7 @@ def make_bigrams_trigrams(texts, min_count=5, threshold=100):
     :param threshold: threshold for bigram model.  The higher this is, the harder it is to make bigrams
     :return: List of bigrams and list of trigrams
     """
-    #TODO: Getting a lot of user warnings here.  Figure out why.
+    # TODO: Getting a lot of user warnings here.  Figure out why.
     bigram = gensim.models.Phrases(texts, min_count=min_count, threshold=threshold)
     bigram_mod = gensim.models.phrases.Phraser(bigram)
     trigram = gensim.models.Phrases(bigram[texts], threshold=100)
@@ -485,6 +514,7 @@ def format_topics_sentences(ldamodel, corpus, texts, mallet=False):
     :param ldamodel: The trained LDA model
     :param corpus: The corpus used for the LDA model
     :param texts: The actual text to consider
+    :param mallet: If a mallet model was used for LDA (the output format is a bit different)
     :return: DataFrame with the most dominant topic per document (in texts)
     """
     sent_topics_df = pd.DataFrame()
@@ -611,6 +641,7 @@ def get_topics_by_document(ldamodel, corpus, mallet=False):
     Gets the contribution of each topic for each document in the corpus
     :param ldamodel: The trained LDA model
     :param corpus: The corpus for the documents
+    :param mallet: If a mallet LDA model was used or not (the output format is a bit different)
     :return: DataFrame with the contribution of each topic to the documents in the corpus
     """
     documents_topic_dists = {}
