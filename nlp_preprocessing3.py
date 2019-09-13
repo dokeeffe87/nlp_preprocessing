@@ -736,3 +736,41 @@ def extract_data_for_mallet_pyldaviz(ldamodel):
 
     return data_to_viz
 
+
+def remove_ascii_words(df, text_col, replace_word):
+    """
+    Function to remove non ascii text from a text column in a dataframe.  The text column is modified in place.
+    :param df: The dataframe with the text column you want to clean of non ascii text
+    :param text_col: The name of the text column to consider
+    :param replace_word: The word you want to replace non ascii characters with.  It is often helpful to use a nonsense word here as the presence of non standard characters might be important for
+                         building predictive models.
+    :return: The list of the non ascii words found if you want to inspect them.
+    """
+    # Initialize list to store discovered non ascii words
+    non_ascii_words = []
+
+    for i in range(len(df)):
+        for word in df.loc[i, text_col].split(' '):
+            if any([ord(character) >= 128 for character in word]):
+                non_ascii_words.append(word)
+                df.loc[i, text_col] = df.loc[i, text_col].replace(word, replace_word)
+
+    return non_ascii_words
+
+
+def w2v_preprocessing(df, text_col):
+    """
+    Function to preprocess a text column for word-2-vec modeling
+    :param df: Dataframe with text you want to process
+    :param text_col: The name of the text column to consider
+    :return: Nothing. All manipulations are applied in place.
+    """
+    df[text_col] = df.text.str.lower()
+    # Split out text into individual sentences
+    df['document_sentences'] = df.text.str.split('.')
+
+    # Tokenize and remove unwanted characters
+    # TODO: Make unwanted character removal optional
+    df['tokens'] = list(map(lambda sentences: list(map(sent_to_words, sentences)), df.document_sentences))
+    # remove empty lists
+    df['tokens'] = list(map(lambda sentences: list(filter(lambda lst: lst, sentences)), df.tokens))
