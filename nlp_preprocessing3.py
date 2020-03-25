@@ -195,16 +195,20 @@ def pre_process_regex(df, text_col):
     return data_re
 
 
-def sent_to_words(data_list):
+def sent_to_words(data_list, use_gensim=True):
     """
     Tokenize words and remove punctuation.
     :param data_list: List containing sentences to process
+    :param use_gensim: Boolean. Whether or not to use gensim for tokenization. Otheriwse will use simple nltk word_tokenize
     :return: List of tokenized sentences
     """
     # TODO: Make punctuation removal an option.
     # Tokenize words and remove punctuation
     for sentence in tqdm(data_list):
-        yield (gensim.utils.simple_preprocess(str(sentence), deacc=True))
+        if use_gensim:
+            yield (gensim.utils.simple_preprocess(str(sentence), deacc=True))
+        else:
+            yield (nltk.tokenize.word_tokenize(str(sentence)))
 
 
 def remove_stopwords(texts, stop_words):
@@ -357,7 +361,7 @@ def create_corpus(id2word, data_lemmatized):
     return [id2word.doc2bow(text) for text in tqdm(data_lemmatized)]
 
 
-def lda_preprocess(df, text_col, lang_list=None, min_count=5, threshold=100, trigrams=False, custom_remove=None):
+def lda_preprocess(df, text_col, lang_list=None, min_count=5, threshold=100, trigrams=False, custom_remove=None, override_langdetect=False, override_language=None, use_gensim_tokenize=True, remove_single_characters=False, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ABV']):
     """
     Applies the functions above to preprocess text data for
     :param df: A DataFrame which contains the text you want to process
@@ -366,35 +370,58 @@ def lda_preprocess(df, text_col, lang_list=None, min_count=5, threshold=100, tri
     :param min_count: min_count for bigram model.  The higher this is, the harder it is to make bigrams
     :param threshold: threshold for bigram model.  The higher this is, the harder it is to make bigrams
     :param trigrams: True if you want to lemmatize on trigrams, default is False
-    :param custom_remove: List of additional words to remove (treat as stopwords).
+    :param custom_remove: List of additional words to remove (treat as stopwords)
+    :param override_langdetect: Boolean. Set True if you want to skip language detection. You might want to do this if you already know all of your text is in one language (which you can provide to
+                                the override_language argument. Supported languages here: https://pypi.org/project/langdetect/), or if your documents are small, which can lead to language
+                                misclassification
+    :param override_language: The language you want to use as the default language. See list of supported language (https://pypi.org/project/langdetect/)
+    :param use_gensim_tokenize: Boolean. Whether or not to use gensim simple_preprocessing for tokenization. This usually removes non-letter characters. If you want to keep some numbers, set this
+                                argument to False and tokenization will be done with simple nltk word_tokenize
+    :param remove_single_characters: Boolean. Set true if you want to ensure that there are no single characters left over in your processed text data. This is only really an issue if you set
+                                     use_gensim_tokenize to False
+    :param allowed_postags: List of allowed part of speech tags to allow when lemmatizing. This will keep only words with the input tags.  Supported tags can be found here (look for POS column in the
+                            first table): https://spacy.io/usage/linguistic-features
     :return: dictionary, corpus, and lemmatized text data
     """
     # TODO: Add support for stemming.
+    # TODO: Add support for automatic number to word conversion.
     print("Begin LDA preprocessing")
 
-    print("Detecting languages")
-    df_lang = remove_non_custom_language(df, text_col, lang_list)
-    if lang_list:
-        print('Language detection complete. Detected and retained languages: {0}'.format(df_lang['language'].unique().tolist()))
+    if not override_langdetect:
+        print("Detecting languages")
+        df_lang = remove_non_custom_language(df, text_col, lang_list)
+        if lang_list is not None:
+            print('Language detection complete. Detected and retained languages: {0}'.format(df_lang['language'].unique().tolist()))
+        else:
+            print('Language detection complete. All languages retained.')
+    elif override_langdetect and override_language is not None:
+        print('Language detection skipped. Attempting to use provided language: {0}'.format(override_language))
+        df['language'] = override_language
+        df_lang = df.copy()
     else:
-        print('Language detection complete. All languages retained.')
+        print('Language detection skipped. Nothing provided to override_language argument, attempting to assume English text')
+        df['language'] = 'en'
+        df_lang = df.copy()
 
     print("Begin regex preprocessing")
     data = pre_process_regex(df_lang, text_col)
     print('End regex preprocessing')
 
     print('Begin sentence preprocessing')
-    data_words = list(sent_to_words(data))
+    if use_gensim_tokenize:
+        data_words = list(sent_to_words(data))
+    else:
+        data_words = sent_to_words(data, use_gensim=False)
     print('End sentence preprocessing')
 
     print('Begin stopword removal')
-    if lang_list:
+    if lang_list is not None:
         print('Generating stopword list for specified languages: {0}'.format(df_lang['language'].unique().tolist()))
         stop_words = get_stopwords(lang_list)
     else:
         print('Generating stopword list for specified languages: {0}'.format(df_lang['language'].unique().tolist()))
         stop_words = get_stopwords(df_lang['language'].unique().tolist())
-    if custom_remove:
+    if custom_remove is not None:
         print("Adding custom words for removal")
         stop_words += custom_remove
         data_words_nostops = remove_stopwords(data_words, stop_words=stop_words)
@@ -408,10 +435,13 @@ def lda_preprocess(df, text_col, lang_list=None, min_count=5, threshold=100, tri
     # Lemmatize:
     print("Begin lemmatization")
     if trigrams:
-        data_lemmatized = lemmatization(data_words_trigrams, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ABV'])
+        data_lemmatized = lemmatization(data_words_trigrams, allowed_postags=allowed_postags)
     else:
-        data_lemmatized = lemmatization(data_words_bigrams, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ABV'])
+        data_lemmatized = lemmatization(data_words_bigrams, allowed_postags=allowed_postags)
     print('End lemmatization')
+
+    if remove_single_characters:
+        data_lemmatized = [[w for w in sentence if len(w) > 1] for sentence in data_lemmatized]
 
     print('Begin creating dictionary')
     id2word = create_dictionary(data_lemmatized)
@@ -442,8 +472,8 @@ def compute_coherence_values(dictionary, corpus, texts, limit, coherence='c_v', 
     """
     coherence_values = []
     model_list = []
-    for num_topics in range(start, limit, step):
-        if mallet_path:
+    for num_topics in tqdm(range(start, limit, step)):
+        if mallet_path is not None:
             model = gensim.models.wrappers.LdaMallet(mallet_path=mallet_path,
                                                      corpus=corpus,
                                                      num_topics=num_topics,
@@ -774,3 +804,56 @@ def w2v_preprocessing(df, text_col):
     df['tokens'] = list(map(lambda sentences: list(map(sent_to_words, sentences)), df.document_sentences))
     # remove empty lists
     df['tokens'] = list(map(lambda sentences: list(filter(lambda lst: lst, sentences)), df.tokens))
+
+
+def find_combos(search_str, search_term, before=False):
+    """
+    Function to find and produce combinations of words and numbers.  For example, you could turn type 2 into type_2.  This helps with producing relevant tokens for topic modeling that might otherwise
+    be left out. With the above example, if you aren't careful, you might turn type 2 into just type.  Doing this explicitly when you know that there are some relevant concepts can be beneficial for
+    your model.
+    :param search_str: The string you want to search. Could be a full document, or a sentence within a document, etc.
+    :param search_term: The word you want to look for. e.g. "type" like in the above example to make tokens like type_2
+    :param before: Boolean. Set true if you want to search for numbers occurring before the search term. e.g. 24 years with before True to make 24_years
+    :return: The modified input string and the original string. e.g. an input "study of type 2 diabetes" would return "study of type_2 diabetes as well as the original "study of type 2 diabetes". If
+             no changes are made to the input string, the return_string variable will be the original input unchanged and the original_string variable will be None. You can use this to detect strings
+             that have actually been modified.
+    """
+    if before:
+        list_ = re.findall('[(\d+\s+)]*(?={0})'.format(search_term), search_str)
+        try:
+            values = list_[0].strip(' ')
+            original = values + ' ' + search_term
+            values = values.replace(' ', '_')
+            string_return = values + '_' + search_term
+        except IndexError:
+            string_return = search_str
+            original = None
+    else:
+        list_ = re.findall('(?<={0})[(\s+\d+)]*'.format(search_term), search_str)
+        try:
+            values = list_[0].strip(' ')
+            original = search_term + ' ' + values
+            values = values.replace(' ', '_')
+            string_return = search_term + '_' + values
+        except IndexError:
+            string_return = search_str
+            original = None
+
+    return string_return, original
+
+
+def string_sub(search_str, search_term, before=False):
+    """
+    Function to run the find_combos function. You can run this with a pandas DataFrame as an apply on a text column to run find_combos on all rows.
+    :param search_str: The string you want to search. Could be a full document, or a sentence within a document, etc.
+    :param search_term: The word you want to look for. e.g. "type" like in the above example to make tokens like type_2
+    :param before: Boolean. Set true if you want to search for numbers occurring before the search term. e.g. 24 years with before True to make 24_years
+    :return: The input string with the replaced terms. e.g. an input "study of type 2 diabetes" would return "study of type_2 diabetes
+    """
+    string_return, original = find_combos(search_str=search_str, search_term=search_term, before=before)
+    if original is not None:
+        replaced_str = search_str.replace(original, string_return)
+    else:
+        replaced_str = search_str
+
+    return replaced_str
