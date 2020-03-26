@@ -456,7 +456,7 @@ def lda_preprocess(df, text_col, lang_list=None, min_count=5, threshold=100, tri
     return id2word, corpus, data_lemmatized
 
 
-def compute_coherence_values(dictionary, corpus, texts, limit, coherence='c_v', start=2, step=3, mallet_path=None, args={}):
+def compute_coherence_values(dictionary, corpus, texts, limit, window_size, coherence='c_v', start=2, step=3, mallet_path=None, args={}):
     """
     Compute the Cv coherence for various number of topics
     :param dictionary: Dictionary
@@ -467,6 +467,8 @@ def compute_coherence_values(dictionary, corpus, texts, limit, coherence='c_v', 
     :param start: The minimum number of topics
     :param step: The step size for the number of topics to consider
     :param mallet_path: Path to mallet if you want to use it for the LDA model
+    :param window_size: size of the window to be used for coherence measures using boolean sliding window as their probability estimator. For u_mass this doesn't matter. If None, the default window
+                        sizes are used which are: c_v - 110, c_uci - 10, c_npmi - 10.
     :param args: Dictionary of parameters to send to LDA models (Gensim or Mallet)
     :return: list of LDA topic models and the list of corresponding coherence values
     """
@@ -491,7 +493,8 @@ def compute_coherence_values(dictionary, corpus, texts, limit, coherence='c_v', 
         coherence_model = CoherenceModel(model=model,
                                          texts=texts,
                                          dictionary=dictionary,
-                                         coherence=coherence)
+                                         coherence=coherence,
+                                         window_size=window_size)
         coherence_values.append(coherence_model.get_coherence())
 
     return model_list, coherence_values
