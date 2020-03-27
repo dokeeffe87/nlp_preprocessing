@@ -540,13 +540,14 @@ def evaluate_model_coherence(model_list, coherence_values, limit, start=2, step=
     return best_model, x[best_index], max(coherence_values), best_index
 
 
-def format_topics_sentences(ldamodel, corpus, texts, mallet=False):
+def format_topics_sentences(ldamodel, corpus, texts, topn=10, mallet=False):
     """
     Determine the dominant topic in a document (sentence).  Works with Mallet models.
     Use the function format_topics_sentences_gensim with gensim's built in LDA model.
     :param ldamodel: The trained LDA model
     :param corpus: The corpus used for the LDA model
     :param texts: The actual text to consider
+    :param topn: The number of words to get per topic
     :param mallet: If a mallet model was used for LDA (the output format is a bit different)
     :return: DataFrame with the most dominant topic per document (in texts)
     """
@@ -562,7 +563,7 @@ def format_topics_sentences(ldamodel, corpus, texts, mallet=False):
         for j, (topic_num, prob_topic) in enumerate(row):
             if j == 0:
                 # This is the dominant topic
-                wp = ldamodel.show_topic(topic_num)
+                wp = ldamodel.show_topic(topic_num, topn=topn)
                 topic_keywords = ", ".join([word for word, prop in wp])
                 sent_topics_df = sent_topics_df.append(pd.Series([int(topic_num), round(prob_topic, 4), topic_keywords]), ignore_index=True)
             else:
