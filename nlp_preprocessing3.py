@@ -268,7 +268,7 @@ def make_bigrams_trigrams(texts, min_count=5, threshold=100):
 
 def lemmatization(texts, allowed_postags=['NOUN', 'ADJ', 'VERB', 'ABV']):
     """
-    Lemmatizes input text
+    Lemmatizes input text with allowed part of speech tags
     :param texts: Text to be lemmatized
     :param allowed_postags: Allowed postags to be used in spacey to lemmatize
     :return: Lemmatized text
